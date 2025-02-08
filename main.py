@@ -1,68 +1,77 @@
 import flet as ft
 from flet import ThemeMode, Icons
+from flet import *
+import os
+import tempfile
 import pandas as pd
-import psycopg2
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
 from db import (
     add_patient, get_patients, update_patient, delete_patient, check_id_exists, search_patients_by_id,
     add_doctor, get_doctors, update_doctor, delete_doctor, check_doctor_id_exists, search_doctors_by_id,
     add_insurance_company, get_insurance_companies, update_insurance_company, delete_insurance_company, check_insurance_company_id_exists, search_insurance_companies_by_id,
     add_contract, get_contracts, update_contract, delete_contract, check_contract_id_exists, search_contracts_by_id,
     add_examination, get_examinations, update_examination, delete_examination, search_examinations, check_examination_id_exists, search_examinations_by_id,
-    set_db_connection_params
+    set_db_credentials, get_connection
 )
 
 def export_vse():
+    # Получаем данные из базы данных
     examinations = get_examinations()
-    df_5 = pd.DataFrame(examinations, columns=[
-        "ID",
-        "ID Пациента",
-        "ID Врача",
-        "Название",
-        "Вид",
-        "Дата проведения",
-        "Стоимость"
-    ])
     contracts = get_contracts()
-    df_4 = pd.DataFrame(contracts, columns=[
-        "ID",
-        "ID Пациента",
-        "ID Врача",
-        "Отделение",
-        "ID Компании"
-    ])
     companies = get_insurance_companies()
-    df_3 = pd.DataFrame(companies, columns=[
-        "ID",
-        "Название",
-        "Номер лицензии",
-        "ФИО руководителя",
-        "Контактный телефон"
-    ])
     doctors = get_doctors()
-    df_2 = pd.DataFrame(doctors, columns=[
-        "ID",
-        "ФИО",
-        "Категория",
-        "Специальность",
-        "Оклад",
-        "Контактный телефон"
-    ])
     patients = get_patients()
+
+    # Создаем DataFrame для каждой таблицы
     df_1 = pd.DataFrame(patients, columns=[
-        "ID",
-        "ФИО",
-        "Категория пациента",
-        "Номер паспорта",
-        "Номер страхового полиса",
-        "Дата поступления",
-        "Гражданство"
+        "ID", "ФИО", "Категория пациента", "Номер паспорта", "Номер страхового полиса", "Дата поступления", "Гражданство"
     ])
-    with pd.ExcelWriter("C:\\games\\wtf\\FLET\\excelBAZA\\wtf.xlsx") as writer:
-        df_1.to_excel(writer, sheet_name="Пациенты", index=False)
-        df_2.to_excel(writer, sheet_name="Врачи", index=False)
-        df_3.to_excel(writer, sheet_name="Страховые компании", index=False)
-        df_4.to_excel(writer, sheet_name="Договоры", index=False)
-        df_5.to_excel(writer, sheet_name="Обследования", index=False)
+    df_2 = pd.DataFrame(doctors, columns=[
+        "ID", "ФИО", "Категория", "Специальность", "Оклад", "Контактный телефон"
+    ])
+    df_3 = pd.DataFrame(companies, columns=[
+        "ID", "Название", "Номер лицензии", "ФИО руководителя", "Контактный телефон"
+    ])
+    df_4 = pd.DataFrame(contracts, columns=[
+        "ID", "ID Пациента", "ID Врача", "Отделение", "ID Компании"
+    ])
+    df_5 = pd.DataFrame(examinations, columns=[
+        "ID", "ID Пациента", "ID Врача", "Название", "Вид", "Дата проведения", "Стоимость"
+    ])
+
+    # Создаем временный файл
+    temp_file = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+    temp_file_path = temp_file.name
+    temp_file.close()
+
+    # Создаем Excel-файл с использованием openpyxl
+    wb = Workbook()
+    wb.remove(wb.active)  # Удаляем пустой лист по умолчанию
+
+    # Добавляем данные в каждый лист
+    for sheet_name, df in [
+        ("Пациенты", df_1),
+        ("Врачи", df_2),
+        ("Страховые компании", df_3),
+        ("Договоры", df_4),
+        ("Обследования", df_5)
+    ]:
+        ws = wb.create_sheet(title=sheet_name)
+        for row in dataframe_to_rows(df, index=False, header=True):
+            ws.append(row)
+
+    # Сохраняем файл во временную директорию
+    wb.save(temp_file_path)
+
+    # Открываем файл в Excel
+    try:
+        if os.name == 'nt':  # Windows
+            os.startfile(temp_file_path)
+        elif os.name == 'posix':  # Unix или Linux
+            subprocess.run(['open', temp_file_path], check=True)
+    except Exception as e:
+        print(f"Ошибка при открытии файла: {e}")
 
 def toggle_theme(page):
     if page.theme_mode == ThemeMode.LIGHT:
@@ -73,941 +82,1797 @@ def toggle_theme(page):
 
 # Пациенты
 def create_patient_ui(page):
-    # Создание полей ввода
-    search_field = ft.TextField(label="Поиск по ID", width=400)
-
-    # Создание таблицы для отображения пациентов
-    # Внутри функции create_patient_ui(page)
-    patients_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID", width=50)),
-            ft.DataColumn(ft.Text("ФИО")),
-            ft.DataColumn(ft.Text("Категория пациента")),
-            ft.DataColumn(ft.Text("Номер паспорта")),
-            ft.DataColumn(ft.Text("Номер страхового полиса")),
-            ft.DataColumn(ft.Text("Дата поступления")),
-            ft.DataColumn(ft.Text("Гражданство")),
-            ft.DataColumn(ft.Text("Редактирование/Удаление"))
-        ],
-        rows=[]
+    # Стилизованное поле поиска
+    search_field = ft.TextField(
+        label="Поиск пациента...",
+        prefix_icon=ft.Icons.SEARCH,
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=400,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
+    )
+    # Анимированная кнопка добавления
+    add_button = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINED, color="#2A9D8F"),
+            ft.Text("Добавить пациента", color="#2A9D8F")
+        ]),
+        padding=15,
+        border_radius=15,
+        bgcolor=ft.Colors.WHITE24,
+        on_click=lambda e: add_new_patient(e),
+        animate=ft.Animation(200, "easeOut"),
+    )
+    # Сетка для карточек пациентов
+    patients_grid = ft.GridView(
+        expand=True,
+        runs_count=3,
+        max_extent=350,
+        child_aspect_ratio=0.75,  # высота карточек
+        spacing=20,
+        run_spacing=20,
+        padding=20
     )
 
+    # Карточка пациента с информацией
+    def create_patient_card(patient):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.PERSON_OUTLINE, color="#2A9D8F"),
+                    ft.Text(patient[1], size=16, weight="bold", expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ID:", color=ft.Colors.GREY_400),
+                        ft.Text(str(patient[0]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Категория:", color=ft.Colors.GREY_400),
+                        ft.Text(patient[2], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Паспорт:", color=ft.Colors.GREY_400),
+                        ft.Text(patient[3], color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Полис:", color=ft.Colors.GREY_400),
+                        ft.Text(patient[4], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Дата поступления:", color=ft.Colors.GREY_400),
+                        ft.Text(str(patient[5]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Гражданство:", color=ft.Colors.GREY_400),
+                        ft.Text(patient[6], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=20),
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="#E9C46A",
+                        tooltip="Редактировать",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, pid=patient[0]: start_editing(pid)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE,
+                        icon_color="#E76F51",
+                        tooltip="Удалить",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, pid=patient[0]: delete_patient_click(pid)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            padding=20,
+            border_radius=15,
+            bgcolor=ft.Colors.WHITE24,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.Colors.BLACK54),
+        )
+
+    # Загрузка данных
     def load_patients(patients=None):
-        if patients is None:
-            patients = get_patients()
-        patients_table.rows.clear()
+        patients_grid.controls.clear()
+        patients = get_patients() if patients is None else patients
         for patient in patients:
-            edit_button = ft.IconButton(icon=ft.Icons.EDIT, on_click=lambda e, pid=patient[0]: start_editing(pid))
-            delete_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, pid=patient[0]: delete_patient_click(pid))
-            patients_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(patient[0]))),
-                        ft.DataCell(ft.Text(patient[1])),
-                        ft.DataCell(ft.Text(patient[2])),
-                        ft.DataCell(ft.Text(patient[3])),
-                        ft.DataCell(ft.Text(patient[4])),
-                        ft.DataCell(ft.Text(str(patient[5]))),
-                        ft.DataCell(ft.Text(patient[6])),
-                        ft.DataCell(ft.Row([edit_button, delete_button]))
-                    ]
-                )
-            )
+            patients_grid.controls.append(create_patient_card(patient))
         page.update()
 
+    # Функция редактирования
     def start_editing(patient_id):
-        # Получаем данные пациента по ID
         patient = search_patients_by_id(patient_id)
         if not patient:
             return
-    
-        # Создаем текстовые поля с текущими значениями
-        id_field = ft.TextField(value=str(patient[0]), width=200)
-        fio_field = ft.TextField(value=patient[1], width=200)
-        category_field = ft.TextField(value=patient[2], width=200)
-        passport_number_field = ft.TextField(value=patient[3], width=200)
-        insurance_policy_number_field = ft.TextField(value=patient[4], width=200)
-        admission_date_field = ft.TextField(value=str(patient[5]), width=200)
-        citizenship_field = ft.TextField(value=patient[6], width=200)
-    
-        # Кнопка сохранения изменений
-        save_button = ft.ElevatedButton(text="Сохранить", on_click=lambda e: save_changes(patient[0], id_field.value, fio_field.value, category_field.value, passport_number_field.value, insurance_policy_number_field.value, admission_date_field.value, citizenship_field.value))
-    
-        # Удаляем старую строку из таблицы и добавляем новую с текстовыми полями
-        patients_table.rows = [
-            ft.DataRow(cells=[
-                ft.DataCell(id_field),
-                ft.DataCell(fio_field),
-                ft.DataCell(category_field),
-                ft.DataCell(passport_number_field),
-                ft.DataCell(insurance_policy_number_field),
-                ft.DataCell(admission_date_field),
-                ft.DataCell(citizenship_field),
-                ft.DataCell(ft.Row([save_button]))
-            ])
-        ] + [row for row in patients_table.rows if int(row.cells[0].content.value) != patient_id]
+
+        edit_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Редактирование пациента", color="#2A9D8F"),
+            content=ft.Column([
+                ft.TextField(label="ID", value=str(patient[0]), read_only=True),
+                ft.TextField(label="ФИО", value=patient[1]),
+                ft.TextField(label="Категория", value=patient[2]),
+                ft.TextField(label="Номер паспорта", value=patient[3]),
+                ft.TextField(label="Страховой полис", value=patient[4]),
+                ft.TextField(label="Дата поступления", value=str(patient[5])),
+                ft.TextField(label="Гражданство", value=patient[6])
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_changes(
+                        patient[0],
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value,
+                        e.control.page.dialog.content.controls[6].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ],
+        )
+        page.dialog = edit_dialog
+        edit_dialog.open = True
         page.update()
 
-    def save_changes(old_patient_id, new_id, fio, category, passport_number, insurance_policy_number, admission_date, citizenship):
+    def save_changes(old_id, fio, category, passport, policy, date, citizenship):
         try:
-            update_patient(old_patient_id, int(new_id), fio, category, passport_number, insurance_policy_number, admission_date, citizenship)
-            load_patients()  # Перезагрузка таблицы после обновления
+            update_patient(old_id, old_id, fio, category, passport, policy, date, citizenship)
+            load_patients()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
 
+    # Функция удаления
     def delete_patient_click(patient_id):
-        try:
-            delete_patient(patient_id)
-            load_patients()
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
-            page.snack_bar.open = True
-            page.update()
-
-    # Функция для добавления нового пациента
-    def add_new_patient(e):
-        # Создаем текстовые поля для ввода новых данных
-        new_id_field = ft.TextField(label="ID", width=400)
-        new_fio_field = ft.TextField(label="ФИО", width=200)
-        new_category_field = ft.TextField(label="Категория пациента", width=200)
-        new_passport_number_field = ft.TextField(label="Номер паспорта", width=200)
-        new_insurance_policy_number_field = ft.TextField(label="Номер страхового полиса", width=200)
-        new_admission_date_field = ft.TextField(label="Дата поступления (YYYY-MM-DD)", width=200)
-        new_citizenship_field = ft.TextField(label="Гражданство", width=200)
+        def confirm_delete(e):  # параметр e
+            try:
+                delete_patient(patient_id)
+                load_patients()
+                page.close_dialog()
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+                page.snack_bar.open = True
+                page.update()
     
-        # Кнопка сохранения новых данных
-        save_new_button = ft.ElevatedButton(text="Добавить", on_click=lambda e: save_new_patient(new_id_field.value, new_fio_field.value, new_category_field.value, new_passport_number_field.value, new_insurance_policy_number_field.value, new_admission_date_field.value, new_citizenship_field.value))
-    
-        # Добавляем новые текстовые поля и кнопку в таблицу
-        patients_table.rows.insert(0, ft.DataRow(cells=[
-            ft.DataCell(new_id_field),
-            ft.DataCell(new_fio_field),
-            ft.DataCell(new_category_field),
-            ft.DataCell(new_passport_number_field),
-            ft.DataCell(new_insurance_policy_number_field),
-            ft.DataCell(new_admission_date_field),
-            ft.DataCell(new_citizenship_field),
-            ft.DataCell(ft.Row([save_new_button]))
-        ]))
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Подтверждение удаления", color="#E76F51"),
+            content=ft.Text(f"Вы уверены, что хотите удалить пациента #{patient_id}?"),
+            actions=[
+                ft.TextButton("Удалить", style=ft.ButtonStyle(color="#E76F51"), on_click=confirm_delete),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = confirm_dialog
+        confirm_dialog.open = True
         page.update()
 
-    def save_new_patient(id, fio, category, passport_number, insurance_policy_number, admission_date, citizenship):
+    # Для автоматической генерации ID
+    def get_next_patient_id():
+        patients = get_patients()
+        if patients:
+            return max(p[0] for p in patients) + 1
+        return 1
+    
+    # Функция добавления нового пациента
+    def add_new_patient(e):
+        new_id = get_next_patient_id()
+        new_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Новый пациент", color="#2A9D8F"),
+            content=ft.Column([
+                ft.Text(f"ID: {new_id}", size=16, weight="bold"), # Автоматический ID
+                ft.TextField(label="ФИО"),
+                ft.TextField(label="Категория"),
+                ft.TextField(label="Номер паспорта"),
+                ft.TextField(label="Страховой полис"),
+                ft.TextField(label="Дата поступления (ГГГГ-ММ-ДД)"),
+                ft.TextField(label="Гражданство")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_new_patient(
+                        new_id,
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value,
+                        e.control.page.dialog.content.controls[6].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = new_dialog
+        new_dialog.open = True
+        page.update()
+
+    def save_new_patient(id, fio, category, passport, policy, date, citizenship):
         try:
-            add_patient(int(id), fio, category, passport_number, insurance_policy_number, admission_date, citizenship)
-            load_patients()  # Перезагрузка таблицы после добавления
+            add_patient(int(id), fio, category, passport, policy, date, citizenship)
+            load_patients()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
-    def search_patients_click(e):
-        query = search_field.value
-        if query:
-            try:
-                patient_id = int(query)
-            except ValueError:
-                page.snack_bar = ft.SnackBar(content=ft.Text("Поиск должен быть числом!"))
-                page.snack_bar.open = True
-                page.update()
-                return
-            patient = search_patients_by_id(patient_id)
-            if patient:
-                load_patients([patient])
-            else:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Пациент с ID {patient_id} не найден!"))
-                page.snack_bar.open = True
-                page.update()
-                load_patients()
-        else:
-            load_patients()
 
-    # Загрузка пациентов при запуске приложения
+    # Поиск пациентов
+    def search_patients_click(e):
+        query = search_field.value.lower()
+        if query:
+            results = []
+            for patient in get_patients():
+                # Проверяем совпадения по всем полям
+                if (query in str(patient[0]).lower() or
+                    query in patient[1].lower() or
+                    query in patient[2].lower() or
+                    query in patient[3].lower() or
+                    query in patient[4].lower() or
+                    query in str(patient[5]).lower() or
+                    query in patient[6].lower()):
+                    results.append(patient)
+            load_patients(results)  # Загружаем только найденные результаты
+        else:
+            load_patients()  # Если запрос пустой, показываем всех пациентов
+    
+    search_field.on_submit = search_patients_click
+    # Первоначальная загрузка данных
     load_patients()
 
-    # Создание кнопок
-    add_patient_button = ft.ElevatedButton(text="Добавить пациента", on_click=add_new_patient)
-    search_button = ft.ElevatedButton(text="Поиск", on_click=search_patients_click)
-
-
-
-    # Оборачиваем таблицу в ListView для скроллинга
-    # Увеличиваем размер таблицы
-    scrollable_table = ft.ListView(
-        width=1920,  # Увеличиваем ширину
-        height=1200,  # Увеличиваем высоту
-        controls=[patients_table],
-        auto_scroll=False
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Row([search_field, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Divider(height=1, color=ft.Colors.WHITE24),
+            patients_grid
+        ]
     )
-
-    # Размещение элементов на странице
-    patient_ui = ft.Column([
-        ft.Row([search_field, search_button, add_patient_button]),
-        scrollable_table
-    ])
-
-    return patient_ui
 
 # Врачи 
 def create_doctor_ui(page):
-    # Создание полей ввода
-    search_field = ft.TextField(label="Поиск по ID", width=400)
-    
-    # Создание таблицы для отображения врачей
-    doctors_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID", width=50)),
-            ft.DataColumn(ft.Text("ФИО")),
-            ft.DataColumn(ft.Text("Категория")),
-            ft.DataColumn(ft.Text("Специальность")),
-            ft.DataColumn(ft.Text("Оклад")),
-            ft.DataColumn(ft.Text("Контактный телефон")),
-            ft.DataColumn(ft.Text("Редактирование/Удаление"))
-        ],
-        rows=[]
+    # Стилизованное поле поиска
+    search_field = ft.TextField(
+        label="Поиск врача...",
+        prefix_icon=ft.Icons.SEARCH,
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=400,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
     )
-    
+    # Анимированная кнопка добавления
+    add_button = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINED, color="#2A9D8F"),
+            ft.Text("Добавить врача", color="#2A9D8F")
+        ]),
+        padding=15,
+        border_radius=15,
+        bgcolor=ft.Colors.WHITE24,
+        on_click=lambda e: add_new_doctor(e),
+        animate=ft.Animation(200, "easeOut"),
+    )
+    # Сетка для карточек врачей
+    doctors_grid = ft.GridView(
+        expand=True,
+        runs_count=3,
+        max_extent=350,
+        child_aspect_ratio=0.75,  # высота карточек
+        spacing=20,
+        run_spacing=20,
+        padding=20
+    )
+
+    # Карточка врача с расширенной информацией
+    def create_doctor_card(doctor):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.MEDICAL_SERVICES_OUTLINED, color="#2A9D8F"),
+                    ft.Text(doctor[1], size=16, weight="bold", expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ID:", color=ft.Colors.GREY_400),
+                        ft.Text(str(doctor[0]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Категория:", color=ft.Colors.GREY_400),
+                        ft.Text(doctor[2], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Специальность:", color=ft.Colors.GREY_400),
+                        ft.Text(doctor[3], color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Оклад:", color=ft.Colors.GREY_400),
+                        ft.Text(str(doctor[4]), color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Контактный телефон:", color=ft.Colors.GREY_400),
+                        ft.Text(doctor[5], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=20),
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="#E9C46A",
+                        tooltip="Редактировать",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, did=doctor[0]: start_editing(did)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE,
+                        icon_color="#E76F51",
+                        tooltip="Удалить",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, did=doctor[0]: delete_doctor_click(did)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            padding=20,
+            border_radius=15,
+            bgcolor=ft.Colors.WHITE24,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.Colors.BLACK54),
+        )
+
+    # Загрузка данных
     def load_doctors(doctors=None):
-        if doctors is None:
-            doctors = get_doctors()
-        doctors_table.rows.clear()
+        doctors_grid.controls.clear()
+        doctors = get_doctors() if doctors is None else doctors
         for doctor in doctors:
-            edit_button = ft.IconButton(icon=ft.Icons.EDIT, on_click=lambda e, did=doctor[0]: start_editing_doctor(did))
-            delete_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, did=doctor[0]: delete_doctor_click(did))
-            doctors_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(doctor[0]))),
-                        ft.DataCell(ft.Text(doctor[1])),
-                        ft.DataCell(ft.Text(doctor[2])),
-                        ft.DataCell(ft.Text(doctor[3])),
-                        ft.DataCell(ft.Text(str(doctor[4]))),
-                        ft.DataCell(ft.Text(doctor[5])),
-                        ft.DataCell(ft.Row([edit_button, delete_button]))
-                    ]
-                )
-            )
+            doctors_grid.controls.append(create_doctor_card(doctor))
         page.update()
-    
-    def start_editing_doctor(doctor_id):
-        # Получаем данные врача по ID
+
+    # Функция редактирования
+    def start_editing(doctor_id):
         doctor = search_doctors_by_id(doctor_id)
         if not doctor:
             return
-    
-        # Создаем текстовые поля с текущими значениями
-        id_field = ft.TextField(value=str(doctor[0]), width=200)
-        fio_field = ft.TextField(value=doctor[1], width=200)
-        category_field = ft.TextField(value=doctor[2], width=200)
-        specialty_field = ft.TextField(value=doctor[3], width=200)
-        salary_field = ft.TextField(value=str(doctor[4]), width=200)
-        contact_phone_field = ft.TextField(value=doctor[5], width=200)
-    
-        # Кнопка сохранения изменений
-        save_button = ft.ElevatedButton(text="Сохранить", on_click=lambda e: save_changes_doctor(doctor[0], id_field.value, fio_field.value, category_field.value, specialty_field.value, salary_field.value, contact_phone_field.value))
-    
-        # Удаляем старую строку из таблицы и добавляем новую с текстовыми полями
-        doctors_table.rows = [
-            ft.DataRow(cells=[
-                ft.DataCell(id_field),
-                ft.DataCell(fio_field),
-                ft.DataCell(category_field),
-                ft.DataCell(specialty_field),
-                ft.DataCell(salary_field),
-                ft.DataCell(contact_phone_field),
-                ft.DataCell(ft.Row([save_button]))
-            ])
-        ] + [row for row in doctors_table.rows if int(row.cells[0].content.value) != doctor_id]
+        edit_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Редактирование врача", color="#2A9D8F"),
+            content=ft.Column([
+                ft.TextField(label="ID", value=str(doctor[0]), read_only=True),
+                ft.TextField(label="ФИО", value=doctor[1]),
+                ft.TextField(label="Категория", value=doctor[2]),
+                ft.TextField(label="Специальность", value=doctor[3]),
+                ft.TextField(label="Оклад", value=str(doctor[4])),
+                ft.TextField(label="Контактный телефон", value=doctor[5])
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_changes(
+                        doctor[0],
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ],
+        )
+        page.dialog = edit_dialog
+        edit_dialog.open = True
         page.update()
-    
-    def save_changes_doctor(old_doctor_id, new_id, fio, category, specialty, salary, contact_phone):
+
+    def save_changes(old_id, fio, category, specialty, salary, contact_phone):
         try:
-            update_doctor(old_doctor_id, int(new_id), fio, category, specialty, float(salary), contact_phone)
-            load_doctors()  # Перезагрузка таблицы после обновления
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
-            page.snack_bar.open = True
-            page.update()
-    
-    def delete_doctor_click(doctor_id):
-        try:
-            delete_doctor(doctor_id)
+            update_doctor(old_id, old_id, fio, category, specialty, float(salary), contact_phone)
             load_doctors()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
-    # Функция для добавления нового врача
-    def add_new_doctor(e):
-        # Создаем текстовые поля для ввода новых данных
-        new_id_field = ft.TextField(label="ID", width=400)
-        new_fio_field = ft.TextField(label="ФИО", width=200)
-        new_category_field = ft.TextField(label="Категория", width=200)
-        new_specialty_field = ft.TextField(label="Специальность", width=200)
-        new_salary_field = ft.TextField(label="Оклад", width=200)
-        new_contact_phone_field = ft.TextField(label="Контактный телефон", width=200)
-    
-        # Кнопка сохранения новых данных
-        save_new_button = ft.ElevatedButton(text="Добавить", on_click=lambda e: save_new_doctor(new_id_field.value, new_fio_field.value, new_category_field.value, new_specialty_field.value, new_salary_field.value, new_contact_phone_field.value))
-    
-        # Добавляем новые текстовые поля и кнопку в таблицу
-        doctors_table.rows.insert(0, ft.DataRow(cells=[
-            ft.DataCell(new_id_field),
-            ft.DataCell(new_fio_field),
-            ft.DataCell(new_category_field),
-            ft.DataCell(new_specialty_field),
-            ft.DataCell(new_salary_field),
-            ft.DataCell(new_contact_phone_field),
-            ft.DataCell(ft.Row([save_new_button]))
-        ]))
+
+    # Функция удаления
+    def delete_doctor_click(doctor_id):
+        def confirm_delete(e):
+            try:
+                delete_doctor(doctor_id)
+                load_doctors()
+                page.close_dialog()
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+                page.snack_bar.open = True
+                page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Подтверждение удаления", color="#E76F51"),
+            content=ft.Text(f"Вы уверены, что хотите удалить врача #{doctor_id}?"),
+            actions=[
+                ft.TextButton("Удалить", style=ft.ButtonStyle(color="#E76F51"), on_click=confirm_delete),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = confirm_dialog
+        confirm_dialog.open = True
         page.update()
-    
+
+    # Автоматическая генерация ID
+    def get_next_doctor_id():
+        doctors = get_doctors()
+        if doctors:
+            return max(d[0] for d in doctors) + 1
+        return 1
+
+    # Функция добавления нового врача
+    def add_new_doctor(e):
+        new_id = get_next_doctor_id()
+        new_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Новый врач", color="#2A9D8F"),
+            content=ft.Column([
+                ft.Text(f"ID: {new_id}", size=16, weight="bold"),
+                ft.TextField(label="ФИО"),
+                ft.TextField(label="Категория"),
+                ft.TextField(label="Специальность"),
+                ft.TextField(label="Оклад"),
+                ft.TextField(label="Контактный телефон")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_new_doctor(
+                        new_id,
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = new_dialog
+        new_dialog.open = True
+        page.update()
+
     def save_new_doctor(id, fio, category, specialty, salary, contact_phone):
         try:
             add_doctor(int(id), fio, category, specialty, float(salary), contact_phone)
-            load_doctors()  # Перезагрузка таблицы после добавления
+            load_doctors()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
+
+    # Поиск врачей
     def search_doctors_click(e):
-        query = search_field.value
+        query = search_field.value.lower()
         if query:
-            try:
-                doctor_id = int(query)
-            except ValueError:
-                page.snack_bar = ft.SnackBar(content=ft.Text("Поиск должен быть числом!"))
-                page.snack_bar.open = True
-                page.update()
-                return
-            doctor = search_doctors_by_id(doctor_id)
-            if doctor:
-                load_doctors([doctor])
-            else:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Врач с ID {doctor_id} не найден!"))
-                page.snack_bar.open = True
-                page.update()
-                load_doctors()
+            results = []
+            for doctor in get_doctors():
+                if (query in str(doctor[0]).lower() or
+                    query in doctor[1].lower() or
+                    query in doctor[2].lower() or
+                    query in doctor[3].lower() or
+                    query in str(doctor[4]).lower() or
+                    query in doctor[5].lower()):
+                    results.append(doctor)
+            load_doctors(results)
         else:
             load_doctors()
 
-    # Загрузка врачей при запуске приложения
-    load_doctors()
-    # Создание кнопок
-    add_doctor_button = ft.ElevatedButton(text="Добавить врача", on_click=add_new_doctor)
-    search_button = ft.ElevatedButton(text="Поиск", on_click=search_doctors_click)
+    search_field.on_submit = search_doctors_click
 
-    # Оборачиваем таблицу в ListView для скроллинга
-    # Увеличиваем размер таблицы
-    scrollable_table = ft.ListView(
-        width=1920,  # Увеличиваем ширину
-        height=1200,  # Увеличиваем высоту
-        controls=[doctors_table],
-        auto_scroll=False
+    # Первоначальная загрузка данных
+    load_doctors()
+
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Row([search_field, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Divider(height=1, color=ft.Colors.WHITE24),
+            doctors_grid
+        ]
     )
-    # Размещение элементов на странице
-    doctor_ui = ft.Column([
-        ft.Row([search_field, search_button, add_doctor_button]),
-        scrollable_table
-    ])
-    return doctor_ui
 
 # Страховые компании
 def create_insurance_company_ui(page):
-    # Создание полей ввода
-    search_field = ft.TextField(label="Поиск по ID", width=400)
-    
-    # Создание таблицы для отображения страховых компаний
-    insurance_companies_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID", width=50)),
-            ft.DataColumn(ft.Text("Название")),
-            ft.DataColumn(ft.Text("Номер лицензии")),
-            ft.DataColumn(ft.Text("ФИО руководителя")),
-            ft.DataColumn(ft.Text("Контактный телефон")),
-            ft.DataColumn(ft.Text("Редактирование/Удаление"))
-        ],
-        rows=[]
+    # Поле поиска
+    search_field = ft.TextField(
+        label="Поиск страховой компании...",
+        prefix_icon=ft.Icons.SEARCH,
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=400,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
     )
-    
-    def load_insurance_companies(companies=None):
-        if companies is None:
-            companies = get_insurance_companies()
-        insurance_companies_table.rows.clear()
+    # Кнопка добавления
+    add_button = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINED, color="#2A9D8F"),
+            ft.Text("Добавить компанию", color="#2A9D8F")
+        ]),
+        padding=15,
+        border_radius=15,
+        bgcolor=ft.Colors.WHITE24,
+        on_click=lambda e: add_new_company(e),
+        animate=ft.Animation(200, "easeOut"),
+    )
+    # Сетка для карточек компаний
+    companies_grid = ft.GridView(
+        expand=True,
+        runs_count=3,
+        max_extent=350,
+        child_aspect_ratio=0.75,  # высота карточек
+        spacing=20,
+        run_spacing=20,
+        padding=20
+    )
+
+    # Карточка страховой компании
+    def create_company_card(company):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.BUSINESS_OUTLINED, color="#2A9D8F"),
+                    ft.Text(company[1], size=16, weight="bold", expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ID:", color=ft.Colors.GREY_400),
+                        ft.Text(str(company[0]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Номер лицензии:", color=ft.Colors.GREY_400),
+                        ft.Text(company[2], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ФИО руководителя:", color=ft.Colors.GREY_400),
+                        ft.Text(company[3], color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Контактный телефон:", color=ft.Colors.GREY_400),
+                        ft.Text(company[4], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=20),
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="#E9C46A",
+                        tooltip="Редактировать",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, cid=company[0]: start_editing(cid)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE,
+                        icon_color="#E76F51",
+                        tooltip="Удалить",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, cid=company[0]: delete_company_click(cid)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            padding=20,
+            border_radius=15,
+            bgcolor=ft.Colors.WHITE24,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.Colors.BLACK54),
+        )
+
+    # Загрузка данных
+    def load_companies(companies=None):
+        companies_grid.controls.clear()
+        companies = get_insurance_companies() if companies is None else companies
         for company in companies:
-            edit_button = ft.IconButton(icon=ft.Icons.EDIT, on_click=lambda e, cid=company[0]: start_editing_company(cid))
-            delete_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, cid=company[0]: delete_company_click(cid))
-            insurance_companies_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(company[0]))),
-                        ft.DataCell(ft.Text(company[1])),
-                        ft.DataCell(ft.Text(company[2])),
-                        ft.DataCell(ft.Text(company[3])),
-                        ft.DataCell(ft.Text(company[4])),
-                        ft.DataCell(ft.Row([edit_button, delete_button]))
-                    ]
-                )
-            )
+            companies_grid.controls.append(create_company_card(company))
         page.update()
-    
-    def start_editing_company(company_id):
-        # Получаем данные компании по ID
+
+    # Функция редактирования
+    def start_editing(company_id):
         company = search_insurance_companies_by_id(company_id)
         if not company:
             return
-    
-        # Создаем текстовые поля с текущими значениями
-        id_field = ft.TextField(value=str(company[0]), width=200)
-        name_field = ft.TextField(value=company[1], width=200)
-        license_number_field = ft.TextField(value=company[2], width=200)
-        director_fio_field = ft.TextField(value=company[3], width=200)
-        contact_phone_field = ft.TextField(value=company[4], width=200)
-    
-        # Кнопка сохранения изменений
-        save_button = ft.ElevatedButton(text="Сохранить", on_click=lambda e: save_changes_company(company[0], id_field.value, name_field.value, license_number_field.value, director_fio_field.value, contact_phone_field.value))
-    
-        # Удаляем старую строку из таблицы и добавляем новую с текстовыми полями
-        insurance_companies_table.rows = [
-            ft.DataRow(cells=[
-                ft.DataCell(id_field),
-                ft.DataCell(name_field),
-                ft.DataCell(license_number_field),
-                ft.DataCell(director_fio_field),
-                ft.DataCell(contact_phone_field),
-                ft.DataCell(ft.Row([save_button]))
-            ])
-        ] + [row for row in insurance_companies_table.rows if int(row.cells[0].content.value) != company_id]
+        edit_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Редактирование компании", color="#2A9D8F"),
+            content=ft.Column([
+                ft.TextField(label="ID", value=str(company[0]), read_only=True),
+                ft.TextField(label="Название", value=company[1]),
+                ft.TextField(label="Номер лицензии", value=company[2]),
+                ft.TextField(label="ФИО руководителя", value=company[3]),
+                ft.TextField(label="Контактный телефон", value=company[4])
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_changes(
+                        company[0],
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ],
+        )
+        page.dialog = edit_dialog
+        edit_dialog.open = True
         page.update()
-    
-    def save_changes_company(old_company_id, new_id, name, license_number, director_fio, contact_phone):
+
+    def save_changes(old_id, name, license_number, director_fio, contact_phone):
         try:
-            update_insurance_company(old_company_id, int(new_id), name, license_number, director_fio, contact_phone)
-            load_insurance_companies()  # Перезагрузка таблицы после обновления
+            update_insurance_company(old_id, old_id, name, license_number, director_fio, contact_phone)
+            load_companies()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
+
+    # Функция удаления
     def delete_company_click(company_id):
-        try:
-            delete_insurance_company(company_id)
-            load_insurance_companies()
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
-            page.snack_bar.open = True
-            page.update()
-    
-    # Функция для добавления новой компании
-    def add_new_company(e):
-        # Создаем текстовые поля для ввода новых данных
-        new_id_field = ft.TextField(label="ID", width=400)
-        new_name_field = ft.TextField(label="Название", width=200)
-        new_license_number_field = ft.TextField(label="Номер лицензии", width=200)
-        new_director_fio_field = ft.TextField(label="ФИО руководителя", width=200)
-        new_contact_phone_field = ft.TextField(label="Контактный телефон", width=200)
-    
-        # Кнопка сохранения новых данных
-        save_new_button = ft.ElevatedButton(text="Добавить", on_click=lambda e: save_new_company(new_id_field.value, new_name_field.value, new_license_number_field.value, new_director_fio_field.value, new_contact_phone_field.value))
-    
-        # Добавляем новые текстовые поля и кнопку в таблицу
-        insurance_companies_table.rows.insert(0, ft.DataRow(cells=[
-            ft.DataCell(new_id_field),
-            ft.DataCell(new_name_field),
-            ft.DataCell(new_license_number_field),
-            ft.DataCell(new_director_fio_field),
-            ft.DataCell(new_contact_phone_field),
-            ft.DataCell(ft.Row([save_new_button]))
-        ]))
+        def confirm_delete(e):
+            try:
+                delete_insurance_company(company_id)
+                load_companies()
+                page.close_dialog()
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+                page.snack_bar.open = True
+                page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Подтверждение удаления", color="#E76F51"),
+            content=ft.Text(f"Вы уверены, что хотите удалить компанию #{company_id}?"),
+            actions=[
+                ft.TextButton("Удалить", style=ft.ButtonStyle(color="#E76F51"), on_click=confirm_delete),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = confirm_dialog
+        confirm_dialog.open = True
         page.update()
-    
+
+    # Автоматическая генерация ID
+    def get_next_company_id():
+        companies = get_insurance_companies()
+        if companies:
+            return max(c[0] for c in companies) + 1
+        return 1
+
+    # Функция добавления новой компании
+    def add_new_company(e):
+        new_id = get_next_company_id()
+        new_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Новая страховая компания", color="#2A9D8F"),
+            content=ft.Column([
+                ft.Text(f"ID: {new_id}", size=16, weight="bold"),
+                ft.TextField(label="Название"),
+                ft.TextField(label="Номер лицензии"),
+                ft.TextField(label="ФИО руководителя"),
+                ft.TextField(label="Контактный телефон")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_new_company(
+                        new_id,
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = new_dialog
+        new_dialog.open = True
+        page.update()
+
     def save_new_company(id, name, license_number, director_fio, contact_phone):
         try:
             add_insurance_company(int(id), name, license_number, director_fio, contact_phone)
-            load_insurance_companies()  # Перезагрузка таблицы после добавления
+            load_companies()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
-    def search_insurance_companies_click(e):
-        query = search_field.value
+
+    # Поиск компаний
+    def search_companies_click(e):
+        query = search_field.value.lower()
         if query:
-            try:
-                company_id = int(query)
-            except ValueError:
-                page.snack_bar = ft.SnackBar(content=ft.Text("Поиск должен быть числом!"))
-                page.snack_bar.open = True
-                page.update()
-                return
-            company = search_insurance_companies_by_id(company_id)
-            if company:
-                load_insurance_companies([company])
-            else:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Компания с ID {company_id} не найдена!"))
-                page.snack_bar.open = True
-                page.update()
-                load_insurance_companies()
+            results = []
+            for company in get_insurance_companies():
+                if (query in str(company[0]).lower() or
+                    query in company[1].lower() or
+                    query in company[2].lower() or
+                    query in company[3].lower() or
+                    query in company[4].lower()):
+                    results.append(company)
+            load_companies(results)
         else:
-            load_insurance_companies()
+            load_companies()
 
-    # Загрузка страховых компаний при запуске приложения
-    load_insurance_companies()
-    # Создание кнопок
-    add_company_button = ft.ElevatedButton(text="Добавить компанию", on_click=add_new_company)
-    search_button = ft.ElevatedButton(text="Поиск", on_click=search_insurance_companies_click)
+    search_field.on_submit = search_companies_click
 
-    # Оборачиваем таблицу в ListView для скроллинга
-    # Увеличиваем размер таблицы
-    scrollable_table = ft.ListView(
-        width=1920,  # Увеличиваем ширину
-        height=1200,  # Увеличиваем высоту
-        controls=[insurance_companies_table],
-        auto_scroll=False
+    # Первоначальная загрузка данных
+    load_companies()
+
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Row([search_field, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Divider(height=1, color=ft.Colors.WHITE24),
+            companies_grid
+        ]
     )
-    # Размещение элементов на странице
-    insurance_company_ui = ft.Column([
-        ft.Row([search_field, search_button, add_company_button]),
-        scrollable_table
-    ])
-    return insurance_company_ui
 
 # Договоры
 def create_contract_ui(page):
-    # Создание полей ввода
-    search_field = ft.TextField(label="Поиск по ID", width=400)
-    
-    # Создание таблицы для отображения договоров
-    contracts_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID", width=50)),
-            ft.DataColumn(ft.Text("ID Пациента")),
-            ft.DataColumn(ft.Text("ID Врача")),
-            ft.DataColumn(ft.Text("Отделение")),
-            ft.DataColumn(ft.Text("ID Компании")),
-            ft.DataColumn(ft.Text("Редактирование/Удаление"))
-        ],
-        rows=[]
+    # Поле поиска
+    search_field = ft.TextField(
+        label="Поиск договора...",
+        prefix_icon=ft.Icons.SEARCH,
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=400,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
     )
-    
+    # Кнопка добавления
+    add_button = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINED, color="#2A9D8F"),
+            ft.Text("Добавить договор", color="#2A9D8F")
+        ]),
+        padding=15,
+        border_radius=15,
+        bgcolor=ft.Colors.WHITE24,
+        on_click=lambda e: add_new_contract(e),
+        animate=ft.Animation(200, "easeOut"),
+    )
+    # Сетка для карточек договоров
+    contracts_grid = ft.GridView(
+        expand=True,
+        runs_count=3,
+        max_extent=350,
+        child_aspect_ratio=0.75,  # высота карточек
+        spacing=20,
+        run_spacing=20,
+        padding=20
+    )
+
+    # Карточка договора
+    def create_contract_card(contract):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.ASSIGNMENT_OUTLINED, color="#2A9D8F"),
+                    ft.Text(f"Договор #{contract[0]}", size=16, weight="bold", expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ID Пациента:", color=ft.Colors.GREY_400),
+                        ft.Text(str(contract[1]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("ID Врача:", color=ft.Colors.GREY_400),
+                        ft.Text(str(contract[2]), color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Отделение:", color=ft.Colors.GREY_400),
+                        ft.Text(contract[3], color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("ID Компании:", color=ft.Colors.GREY_400),
+                        ft.Text(str(contract[4]) if contract[4] else "Нет", color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=20),
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="#E9C46A",
+                        tooltip="Редактировать",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, cid=contract[0]: start_editing(cid)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE,
+                        icon_color="#E76F51",
+                        tooltip="Удалить",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, cid=contract[0]: delete_contract_click(cid)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            padding=20,
+            border_radius=15,
+            bgcolor=ft.Colors.WHITE24,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.Colors.BLACK54),
+        )
+
+    # Загрузка данных
     def load_contracts(contracts=None):
-        if contracts is None:
-            contracts = get_contracts()
-        contracts_table.rows.clear()
+        contracts_grid.controls.clear()
+        contracts = get_contracts() if contracts is None else contracts
         for contract in contracts:
-            edit_button = ft.IconButton(icon=ft.Icons.EDIT, on_click=lambda e, cid=contract[0]: start_editing_contract(cid))
-            delete_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, cid=contract[0]: delete_contract_click(cid))
-            contracts_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(contract[0]))),
-                        ft.DataCell(ft.Text(str(contract[1]))),
-                        ft.DataCell(ft.Text(str(contract[2]))),
-                        ft.DataCell(ft.Text(contract[3])),
-                        ft.DataCell(ft.Text(str(contract[4]))),
-                        ft.DataCell(ft.Row([edit_button, delete_button]))
-                    ]
-                )
-            )
+            contracts_grid.controls.append(create_contract_card(contract))
         page.update()
-    
-    def start_editing_contract(contract_id):
-        # Получаем данные договора по ID
+
+    # Функция редактирования
+    def start_editing(contract_id):
         contract = search_contracts_by_id(contract_id)
         if not contract:
             return
-    
-        # Создаем текстовые поля с текущими значениями
-        id_field = ft.TextField(value=str(contract[0]), width=200)
-        patient_id_field = ft.TextField(value=str(contract[1]), width=200)
-        doctor_id_field = ft.TextField(value=str(contract[2]), width=200)
-        department_field = ft.TextField(value=contract[3], width=200)
-        company_id_field = ft.TextField(value=str(contract[4]), width=200)
-    
-        # Кнопка сохранения изменений
-        save_button = ft.ElevatedButton(text="Сохранить", on_click=lambda e: save_changes_contract(contract[0], id_field.value, patient_id_field.value, doctor_id_field.value, department_field.value, company_id_field.value))
-    
-        # Удаляем старую строку из таблицы и добавляем новую с текстовыми полями
-        contracts_table.rows = [
-            ft.DataRow(cells=[
-                ft.DataCell(id_field),
-                ft.DataCell(patient_id_field),
-                ft.DataCell(doctor_id_field),
-                ft.DataCell(department_field),
-                ft.DataCell(company_id_field),
-                ft.DataCell(ft.Row([save_button]))
-            ])
-        ] + [row for row in contracts_table.rows if int(row.cells[0].content.value) != contract_id]
+        edit_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Редактирование договора", color="#2A9D8F"),
+            content=ft.Column([
+                ft.TextField(label="ID", value=str(contract[0]), read_only=True),
+                ft.TextField(label="ID Пациента", value=str(contract[1])),
+                ft.TextField(label="ID Врача", value=str(contract[2])),
+                ft.TextField(label="Отделение", value=contract[3]),
+                ft.TextField(label="ID Компании", value=str(contract[4]) if contract[4] else ""),
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_changes(
+                        contract[0],
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ],
+        )
+        page.dialog = edit_dialog
+        edit_dialog.open = True
         page.update()
-    
-    def save_changes_contract(old_contract_id, new_id, patient_id, doctor_id, department, company_id):
+
+    def save_changes(old_id, patient_id, doctor_id, department, company_id):
         try:
-            update_contract(old_contract_id, int(new_id), int(patient_id), int(doctor_id), department, int(company_id) if company_id else None)
-            load_contracts()  # Перезагрузка таблицы после обновления
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
-            page.snack_bar.open = True
-            page.update()
-    
-    def delete_contract_click(contract_id):
-        try:
-            delete_contract(contract_id)
+            update_contract(
+                old_id,
+                int(patient_id),
+                int(doctor_id),
+                department,
+                int(company_id) if company_id else None
+            )
             load_contracts()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
-    # Функция для добавления нового договора
-    def add_new_contract(e):
-        # Создаем текстовые поля для ввода новых данных
-        new_id_field = ft.TextField(label="ID", width=400)
-        new_patient_id_field = ft.TextField(label="ID Пациента", width=200)
-        new_doctor_id_field = ft.TextField(label="ID Врача", width=200)
-        new_department_field = ft.TextField(label="Отделение", width=200)
-        new_company_id_field = ft.TextField(label="ID Компании", width=200)
-    
-        # Кнопка сохранения новых данных
-        save_new_button = ft.ElevatedButton(text="Добавить", on_click=lambda e: save_new_contract(new_id_field.value, new_patient_id_field.value, new_doctor_id_field.value, new_department_field.value, new_company_id_field.value))
-    
-        # Добавляем новые текстовые поля и кнопку в таблицу
-        contracts_table.rows.insert(0, ft.DataRow(cells=[
-            ft.DataCell(new_id_field),
-            ft.DataCell(new_patient_id_field),
-            ft.DataCell(new_doctor_id_field),
-            ft.DataCell(new_department_field),
-            ft.DataCell(new_company_id_field),
-            ft.DataCell(ft.Row([save_new_button]))
-        ]))
+
+    # Функция удаления
+    def delete_contract_click(contract_id):
+        def confirm_delete(e):
+            try:
+                delete_contract(contract_id)
+                load_contracts()
+                page.close_dialog()
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+                page.snack_bar.open = True
+                page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Подтверждение удаления", color="#E76F51"),
+            content=ft.Text(f"Вы уверены, что хотите удалить договор #{contract_id}?"),
+            actions=[
+                ft.TextButton("Удалить", style=ft.ButtonStyle(color="#E76F51"), on_click=confirm_delete),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = confirm_dialog
+        confirm_dialog.open = True
         page.update()
-    
+
+    # Автоматическая генерация ID
+    def get_next_contract_id():
+        contracts = get_contracts()
+        if contracts:
+            return max(c[0] for c in contracts) + 1
+        return 1
+
+    # Функция добавления нового договора
+    def add_new_contract(e):
+        new_id = get_next_contract_id()
+        new_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Новый договор", color="#2A9D8F"),
+            content=ft.Column([
+                ft.Text(f"ID: {new_id}", size=16, weight="bold"),
+                ft.TextField(label="ID Пациента"),
+                ft.TextField(label="ID Врача"),
+                ft.TextField(label="Отделение"),
+                ft.TextField(label="ID Компании (опционально)")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_new_contract(
+                        new_id,
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = new_dialog
+        new_dialog.open = True
+        page.update()
+
     def save_new_contract(id, patient_id, doctor_id, department, company_id):
         try:
-            add_contract(int(id), int(patient_id), int(doctor_id), department, int(company_id) if company_id else None)
-            load_contracts()  # Перезагрузка таблицы после добавления
+            add_contract(
+                int(id),
+                int(patient_id),
+                int(doctor_id),
+                department,
+                int(company_id) if company_id else None
+            )
+            load_contracts()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
+
+    # Поиск договоров
     def search_contracts_click(e):
-        query = search_field.value
+        query = search_field.value.lower()
         if query:
-            try:
-                contract_id = int(query)
-            except ValueError:
-                page.snack_bar = ft.SnackBar(content=ft.Text("Поиск должен быть числом!"))
-                page.snack_bar.open = True
-                page.update()
-                return
-            contract = search_contracts_by_id(contract_id)
-            if contract:
-                load_contracts([contract])
-            else:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Договор с ID {contract_id} не найден!"))
-                page.snack_bar.open = True
-                page.update()
-                load_contracts()
+            results = []
+            for contract in get_contracts():
+                if (query in str(contract[0]).lower() or
+                    query in str(contract[1]).lower() or
+                    query in str(contract[2]).lower() or
+                    query in contract[3].lower() or
+                    query in str(contract[4]).lower()):
+                    results.append(contract)
+            load_contracts(results)
         else:
             load_contracts()
 
-    # Загрузка договоров при запуске приложения
-    load_contracts()
-    # Создание кнопок
-    add_contract_button = ft.ElevatedButton(text="Добавить договор", on_click=add_new_contract)
-    search_button = ft.ElevatedButton(text="Поиск", on_click=search_contracts_click)
+    search_field.on_submit = search_contracts_click
 
-    # Оборачиваем таблицу в ListView для скроллинга
-    # Увеличиваем размер таблицы
-    scrollable_table = ft.ListView(
-        width=1920,  # Увеличиваем ширину
-        height=1200,  # Увеличиваем высоту
-        controls=[contracts_table],
-        auto_scroll=False
+    # Первоначальная загрузка данных
+    load_contracts()
+
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Row([search_field, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Divider(height=1, color=ft.Colors.WHITE24),
+            contracts_grid
+        ]
     )
-    # Размещение элементов на странице
-    contract_ui = ft.Column([
-        ft.Row([search_field, search_button, add_contract_button]),
-        scrollable_table
-    ])
-    return contract_ui
 
 # Обследования
 def create_examination_ui(page):
-    # Создание полей ввода
-    search_field = ft.TextField(label="Поиск по ID", width=400)
-    
-    # Создание таблицы для отображения обследований
-    examinations_table = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID", width=50)),
-            ft.DataColumn(ft.Text("ID Пациента")),
-            ft.DataColumn(ft.Text("ID Врача")),
-            ft.DataColumn(ft.Text("Название")),
-            ft.DataColumn(ft.Text("Вид")),
-            ft.DataColumn(ft.Text("Дата проведения")),
-            ft.DataColumn(ft.Text("Стоимость")),
-            ft.DataColumn(ft.Text("Редактирование/Удаление"))
-        ],
-        rows=[]
+    # Поле поиска
+    search_field = ft.TextField(
+        label="Поиск обследования...",
+        prefix_icon=ft.Icons.SEARCH,
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=400,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
     )
-    
+    # Кнопка добавления
+    add_button = ft.Container(
+        content=ft.Row([
+            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINED, color="#2A9D8F"),
+            ft.Text("Добавить обследование", color="#2A9D8F")
+        ]),
+        padding=15,
+        border_radius=15,
+        bgcolor=ft.Colors.WHITE24,
+        on_click=lambda e: add_new_examination(e),
+        animate=ft.Animation(200, "easeOut"),
+    )
+    # Сетка для карточек обследований
+    examinations_grid = ft.GridView(
+        expand=True,
+        runs_count=3,
+        max_extent=350,
+        child_aspect_ratio=0.75,  # высота карточек
+        spacing=20,
+        run_spacing=20,
+        padding=20
+    )
+
+    # Карточка обследования
+    def create_examination_card(examination):
+        return ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Icon(ft.Icons.HEALTH_AND_SAFETY_OUTLINED, color="#2A9D8F"),
+                    ft.Text(f"Обследование #{examination[0]}", size=16, weight="bold", expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("ID Пациента:", color=ft.Colors.GREY_400),
+                        ft.Text(str(examination[1]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("ID Врача:", color=ft.Colors.GREY_400),
+                        ft.Text(str(examination[2]), color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Название:", color=ft.Colors.GREY_400),
+                        ft.Text(examination[3], color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Вид:", color=ft.Colors.GREY_400),
+                        ft.Text(examination[4], color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=10, color="transparent"),
+                ft.Row([
+                    ft.Column([
+                        ft.Text("Дата проведения:", color=ft.Colors.GREY_400),
+                        ft.Text(str(examination[5]), color="#2A9D8F")
+                    ], expand=True),
+                    ft.VerticalDivider(width=20),
+                    ft.Column([
+                        ft.Text("Стоимость:", color=ft.Colors.GREY_400),
+                        ft.Text(str(examination[6]) if examination[6] else "Не указана", color="#2A9D8F")
+                    ], expand=True)
+                ]),
+                ft.Divider(height=20),
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.EDIT,
+                        icon_color="#E9C46A",
+                        tooltip="Редактировать",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, eid=examination[0]: start_editing(eid)
+                    ),
+                    ft.IconButton(
+                        icon=ft.Icons.DELETE,
+                        icon_color="#E76F51",
+                        tooltip="Удалить",
+                        bgcolor=ft.Colors.WHITE24,
+                        on_click=lambda e, eid=examination[0]: delete_examination_click(eid)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+            ]),
+            padding=20,
+            border_radius=15,
+            bgcolor=ft.Colors.WHITE24,
+            shadow=ft.BoxShadow(spread_radius=1, blur_radius=15, color=ft.Colors.BLACK54),
+        )
+
+    # Загрузка данных
     def load_examinations(examinations=None):
-        if examinations is None:
-            examinations = get_examinations()
-        examinations_table.rows.clear()
+        examinations_grid.controls.clear()
+        examinations = get_examinations() if examinations is None else examinations
         for examination in examinations:
-            edit_button = ft.IconButton(icon=ft.Icons.EDIT, on_click=lambda e, eid=examination[0]: start_editing_examination(eid))
-            delete_button = ft.IconButton(icon=ft.Icons.DELETE, on_click=lambda e, eid=examination[0]: delete_examination_click(eid))
-            examinations_table.rows.append(
-                ft.DataRow(
-                    cells=[
-                        ft.DataCell(ft.Text(str(examination[0]))),
-                        ft.DataCell(ft.Text(str(examination[1]))),
-                        ft.DataCell(ft.Text(str(examination[2]))),
-                        ft.DataCell(ft.Text(examination[3])),
-                        ft.DataCell(ft.Text(examination[4])),
-                        ft.DataCell(ft.Text(str(examination[5]))),
-                        ft.DataCell(ft.Text(str(examination[6]))),
-                        ft.DataCell(ft.Row([edit_button, delete_button]))
-                    ]
-                )
-            )
+            examinations_grid.controls.append(create_examination_card(examination))
         page.update()
-    
-    def start_editing_examination(examination_id):
-        # Получаем данные обследования по ID
+
+    # Функция редактирования
+    def start_editing(examination_id):
         examination = search_examinations_by_id(examination_id)
         if not examination:
             return
-    
-        # Создаем текстовые поля с текущими значениями
-        id_field = ft.TextField(value=str(examination[0]), width=200)
-        patient_id_field = ft.TextField(value=str(examination[1]), width=200)
-        doctor_id_field = ft.TextField(value=str(examination[2]), width=200)
-        name_field = ft.TextField(value=examination[3], width=200)
-        type_field = ft.TextField(value=examination[4], width=200)
-        date_field = ft.TextField(value=str(examination[5]), width=200)
-        cost_field = ft.TextField(value=str(examination[6]) if examination[6] else "", width=200)
-    
-        # Кнопка сохранения изменений
-        save_button = ft.ElevatedButton(text="Сохранить", on_click=lambda e: save_changes_examination(examination[0], id_field.value, patient_id_field.value, doctor_id_field.value, name_field.value, type_field.value, date_field.value, cost_field.value))
-    
-        # Удаляем старую строку из таблицы и добавляем новую с текстовыми полями
-        examinations_table.rows = [
-            ft.DataRow(cells=[
-                ft.DataCell(id_field),
-                ft.DataCell(patient_id_field),
-                ft.DataCell(doctor_id_field),
-                ft.DataCell(name_field),
-                ft.DataCell(type_field),
-                ft.DataCell(date_field),
-                ft.DataCell(cost_field),
-                ft.DataCell(ft.Row([save_button]))
-            ])
-        ] + [row for row in examinations_table.rows if int(row.cells[0].content.value) != examination_id]
+        edit_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Редактирование обследования", color="#2A9D8F"),
+            content=ft.Column([
+                ft.TextField(label="ID", value=str(examination[0]), read_only=True),
+                ft.TextField(label="ID Пациента", value=str(examination[1])),
+                ft.TextField(label="ID Врача", value=str(examination[2])),
+                ft.TextField(label="Название", value=examination[3]),
+                ft.TextField(label="Вид", value=examination[4]),
+                ft.TextField(label="Дата проведения (ГГГГ-ММ-ДД)", value=str(examination[5])),
+                ft.TextField(label="Стоимость", value=str(examination[6]) if examination[6] else "")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_changes(
+                        examination[0],
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value,
+                        e.control.page.dialog.content.controls[6].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ],
+        )
+        page.dialog = edit_dialog
+        edit_dialog.open = True
         page.update()
-    
-    def save_changes_examination(old_examination_id, new_id, patient_id, doctor_id, name, type, date, cost):
+
+    def save_changes(old_id, patient_id, doctor_id, name, type, date, cost):
         try:
-            update_examination(old_examination_id, int(new_id), int(patient_id), int(doctor_id), name, type, date, float(cost) if cost else None)
-            load_examinations()  # Перезагрузка таблицы после обновления
-        except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
-            page.snack_bar.open = True
-            page.update()
-    
-    def delete_examination_click(examination_id):
-        try:
-            delete_examination(examination_id)
+            update_examination(
+                old_id,
+                int(patient_id),
+                int(doctor_id),
+                name,
+                type,
+                date,
+                float(cost) if cost else None
+            )
             load_examinations()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
-    # Функция для добавления нового обследования
-    def add_new_examination(e):
-        # Создаем текстовые поля для ввода новых данных
-        new_id_field = ft.TextField(label="ID", width=400)
-        new_patient_id_field = ft.TextField(label="ID Пациента", width=200)
-        new_doctor_id_field = ft.TextField(label="ID Врача", width=200)
-        new_name_field = ft.TextField(label="Название", width=200)
-        new_type_field = ft.TextField(label="Вид", width=200)
-        new_date_field = ft.TextField(label="Дата проведения (YYYY-MM-DD)", width=200)
-        new_cost_field = ft.TextField(label="Стоимость", width=200)
-    
-        # Кнопка сохранения новых данных
-        save_new_button = ft.ElevatedButton(text="Добавить", on_click=lambda e: save_new_examination(new_id_field.value, new_patient_id_field.value, new_doctor_id_field.value, new_name_field.value, new_type_field.value, new_date_field.value, new_cost_field.value))
-    
-        # Добавляем новые текстовые поля и кнопку в таблицу
-        examinations_table.rows.insert(0, ft.DataRow(cells=[
-            ft.DataCell(new_id_field),
-            ft.DataCell(new_patient_id_field),
-            ft.DataCell(new_doctor_id_field),
-            ft.DataCell(new_name_field),
-            ft.DataCell(new_type_field),
-            ft.DataCell(new_date_field),
-            ft.DataCell(new_cost_field),
-            ft.DataCell(ft.Row([save_new_button]))
-        ]))
+
+    # Функция удаления
+    def delete_examination_click(examination_id):
+        def confirm_delete(e):
+            try:
+                delete_examination(examination_id)
+                load_examinations()
+                page.close_dialog()
+            except Exception as e:
+                page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+                page.snack_bar.open = True
+                page.update()
+
+        confirm_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Подтверждение удаления", color="#E76F51"),
+            content=ft.Text(f"Вы уверены, что хотите удалить обследование #{examination_id}?"),
+            actions=[
+                ft.TextButton("Удалить", style=ft.ButtonStyle(color="#E76F51"), on_click=confirm_delete),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = confirm_dialog
+        confirm_dialog.open = True
         page.update()
-    
+
+    # Автоматическая генерация ID
+    def get_next_examination_id():
+        examinations = get_examinations()
+        if examinations:
+            return max(e[0] for e in examinations) + 1
+        return 1
+
+    # Функция добавления нового обследования
+    def add_new_examination(e):
+        new_id = get_next_examination_id()
+        new_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Новое обследование", color="#2A9D8F"),
+            content=ft.Column([
+                ft.Text(f"ID: {new_id}", size=16, weight="bold"),
+                ft.TextField(label="ID Пациента"),
+                ft.TextField(label="ID Врача"),
+                ft.TextField(label="Название"),
+                ft.TextField(label="Вид"),
+                ft.TextField(label="Дата проведения (ГГГГ-ММ-ДД)"),
+                ft.TextField(label="Стоимость")
+            ], spacing=10),
+            actions=[
+                ft.TextButton(
+                    "Сохранить",
+                    style=ft.ButtonStyle(color="#2A9D8F"),
+                    on_click=lambda e: save_new_examination(
+                        new_id,
+                        e.control.page.dialog.content.controls[1].value,
+                        e.control.page.dialog.content.controls[2].value,
+                        e.control.page.dialog.content.controls[3].value,
+                        e.control.page.dialog.content.controls[4].value,
+                        e.control.page.dialog.content.controls[5].value,
+                        e.control.page.dialog.content.controls[6].value
+                    )
+                ),
+                ft.TextButton("Отмена", on_click=lambda e: page.close_dialog())
+            ]
+        )
+        page.dialog = new_dialog
+        new_dialog.open = True
+        page.update()
+
     def save_new_examination(id, patient_id, doctor_id, name, type, date, cost):
         try:
-            add_examination(int(id), int(patient_id), int(doctor_id), name, type, date, float(cost) if cost else None)
-            load_examinations()  # Перезагрузка таблицы после добавления
+            add_examination(
+                int(id),
+                int(patient_id),
+                int(doctor_id),
+                name,
+                type,
+                date,
+                float(cost) if cost else None
+            )
+            load_examinations()
+            page.close_dialog()
         except Exception as e:
-            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"))
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
             page.snack_bar.open = True
             page.update()
-    
+
+    # Поиск обследований
     def search_examinations_click(e):
-        query = search_field.value
+        query = search_field.value.lower()
         if query:
-            try:
-                examination_id = int(query)
-            except ValueError:
-                page.snack_bar = ft.SnackBar(content=ft.Text("Поиск должен быть числом!"))
-                page.snack_bar.open = True
-                page.update()
-                return
-            examination = search_examinations_by_id(examination_id)
-            if examination:
-                load_examinations([examination])
-            else:
-                page.snack_bar = ft.SnackBar(content=ft.Text(f"Обследование с ID {examination_id} не найдено!"))
-                page.snack_bar.open = True
-                page.update()
-                load_examinations()
+            results = []
+            for examination in get_examinations():
+                if (query in str(examination[0]).lower() or
+                    query in str(examination[1]).lower() or
+                    query in str(examination[2]).lower() or
+                    query in examination[3].lower() or
+                    query in examination[4].lower() or
+                    query in str(examination[5]).lower() or
+                    query in str(examination[6]).lower()):
+                    results.append(examination)
+            load_examinations(results)
         else:
             load_examinations()
 
-    # Загрузка обследований при запуске приложения
+    search_field.on_submit = search_examinations_click
+
+    # Первоначальная загрузка данных
     load_examinations()
-    # Создание кнопок
-    add_examination_button = ft.ElevatedButton(text="Добавить обследование", on_click=add_new_examination)
-    search_button = ft.ElevatedButton(text="Поиск", on_click=search_examinations_click)
 
-    # Оборачиваем таблицу в ListView для скроллинга
-    # Увеличиваем размер таблицы
-    scrollable_table = ft.ListView(
-        width=1920,  # Увеличиваем ширину
-        height=1200,  # Увеличиваем высоту
-        controls=[examinations_table],
-        auto_scroll=False
-    )
-    # Размещение элементов на странице
-    examination_ui = ft.Column([
-        ft.Row([search_field, search_button, add_examination_button]),
-        scrollable_table
-    ])
-    return examination_ui
-
-# Функция для проверки подключения к базе данных
-def test_db_connection(host, dbname, user, password):
-    try:
-        conn = psycopg2.connect(
-            host=host,
-            database=dbname,
-            user=user,
-            password=password
-        )
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"Ошибка подключения к базе данных: {str(e)}")
-        return False
-
-# Форма авторизации
-def create_auth_ui(page):
-    # Поля ввода для данных подключения
-    host_field = ft.TextField(label="Host", width=400)
-    dbname_field = ft.TextField(label="Database Name", width=400)
-    user_field = ft.TextField(label="User", width=400)
-    password_field = ft.TextField(label="Password", width=400, password=True)
-
-    def on_auth_click(e):
-        host = host_field.value
-        dbname = dbname_field.value
-        user = user_field.value
-        password = password_field.value
-
-        if not host or not dbname or not user or not password:
-            page.snack_bar = ft.SnackBar(content=ft.Text("Заполните все поля!"))
-            page.snack_bar.open = True
-            page.update()
-            return
-
-        if test_db_connection(host, dbname, user, password):
-            page.snack_bar = ft.SnackBar(content=ft.Text("Подключение успешно!"))
-            page.snack_bar.open = True
-            page.update()
-
-            # Установите параметры подключения
-            set_db_connection_params(host, dbname, user, password)
-
-            # Переход к основному интерфейсу
-            page.clean()  # Очистите текущую страницу
-            main(page)  # Запустите основное приложение
-        else:
-            page.snack_bar = ft.SnackBar(content=ft.Text("Ошибка подключения к базе данных!"))
-            page.snack_bar.open = True
-            page.update()
-
-    # Кнопка авторизации
-    auth_button = ft.ElevatedButton(text="Авторизоваться", on_click=on_auth_click)
-
-    # Размещение элементов на странице
-    auth_ui = ft.Column([
-        ft.Row([host_field]),
-        ft.Row([dbname_field]),
-        ft.Row([user_field]),
-        ft.Row([password_field]),
-        ft.Row([auth_button])
-    ])
-
-    return auth_ui
-
-
-
-def create_settings_ui(page):
-    export_all_button = ft.ElevatedButton(text="Экспорт всей базы в Excel", on_click=lambda _: export_vse())
-    theme_button = ft.ElevatedButton(text="Переключить тему", on_click=lambda _: toggle_theme(page))
-    return ft.Column([export_all_button, theme_button])
-
-def main(page: ft.Page):
-    page.title = "Медицинское приложение"
-    page.vertical_alignment = ft.MainAxisAlignment.START
-    page.theme_mode = ThemeMode.DARK
-    
-    # Создание навигационного меню
-    tabs = ft.Tabs(
-        selected_index=0,
-        animation_duration=300,
-        tabs=[
-            ft.Tab(text="Пациенты", content=create_patient_ui(page)),
-            ft.Tab(text="Врачи", content=create_doctor_ui(page)),
-            ft.Tab(text="Страховые компании", content=create_insurance_company_ui(page)),
-            ft.Tab(text="Договоры", content=create_contract_ui(page)),
-            ft.Tab(text="Обследования", content=create_examination_ui(page)),
-            ft.Tab(text="Настройки", content=create_settings_ui(page))
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Row([search_field, add_button], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            ft.Divider(height=1, color=ft.Colors.WHITE24),
+            examinations_grid
         ]
     )
+
+
+#отчеты ?
+def create_reports_ui(page):
+    # Выбор типа отчета
+    report_type_dropdown = ft.Dropdown(
+        label="Выберите тип отчета",
+        options=[
+            ft.dropdown.Option("1", "Отчет о посещениях пациентов за период"),
+            ft.dropdown.Option("2", "Отчет о количестве пациентов по категориям"),
+            ft.dropdown.Option("3", "Отчет о врачах и количестве обследований"),
+            ft.dropdown.Option("4", "Отчет о страховых компаниях и пациентах"),
+            ft.dropdown.Option("5", "Отчет о пациентах и их последних обследованиях"),
+        ],
+        width=400,
+        value="1"
+    )
+
+    # Поля для ввода данных
+    start_date_field = ft.TextField(label="Дата начала", visible=False)
+    end_date_field = ft.TextField(label="Дата окончания", visible=False)
+    category_field = ft.TextField(label="Категория", visible=False)
+
+    # Функция для показа/скрытия полей ввода
+    def update_input_fields(e):
+        if report_type_dropdown.value == "1":
+            start_date_field.visible = True
+            end_date_field.visible = True
+            category_field.visible = False
+        elif report_type_dropdown.value == "2":
+            start_date_field.visible = False
+            end_date_field.visible = False
+            category_field.visible = True
+        else:
+            start_date_field.visible = False
+            end_date_field.visible = False
+            category_field.visible = False
+        page.update()
+
+    report_type_dropdown.on_change = update_input_fields
+
+    # Кнопка генерации отчета
+    generate_button = ft.ElevatedButton(
+        text="Сформировать отчет",
+        on_click=lambda e: generate_report(
+            report_type_dropdown.value,
+            start_date_field.value,
+            end_date_field.value,
+            category_field.value,
+            page
+        )
+    )
+
+    return ft.Column(
+        spacing=20,
+        controls=[
+            report_type_dropdown,
+            start_date_field,
+            end_date_field,
+            category_field,
+            generate_button
+        ]
+    )
+
+def display_report(data, columns, page):
+    report_table = ft.DataTable(
+        columns=[ft.DataColumn(ft.Text(col)) for col in columns],
+        rows=[
+            ft.DataRow(cells=[ft.DataCell(ft.Text(str(cell))) for cell in row])
+            for row in data
+        ]
+    )
+    page.dialog = ft.AlertDialog(
+        title=ft.Text("Результаты отчета"),
+        content=report_table,
+        actions=[ft.TextButton("Закрыть", on_click=lambda e: page.close_dialog())]
+    )
+    page.dialog.open = True
+    page.update()
+
+def generate_report(report_type, start_date, end_date, category, page):
+    if report_type == "1":  # Отчет о посещениях пациентов за период
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT Patient_id, Full_Name, Admission_Date 
+                FROM Patients 
+                WHERE Admission_Date BETWEEN %s AND %s
+                """,
+                (start_date, end_date)
+            )
+            results = cur.fetchall()
+            display_report(results, ["ID Пациента", "ФИО", "Дата поступления"], page)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+            page.snack_bar.open = True
+            page.update()
+
+    elif report_type == "2":  # Отчет о количестве пациентов по категориям
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT Patient_Category, COUNT(*) 
+                FROM Patients 
+                WHERE Patient_Category = %s
+                GROUP BY Patient_Category
+                """,
+                (category,)
+            )
+            results = cur.fetchall()
+            display_report(results, ["Категория", "Количество пациентов"], page)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+            page.snack_bar.open = True
+            page.update()
+
+    elif report_type == "3":  # Отчет о врачах и количестве обследований
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT d.Doctor_id, d.Full_Name, COUNT(e.Examination_id) AS Examination_Count
+                FROM Doctors d
+                LEFT JOIN Examinations e ON d.Doctor_id = e.Doctor_id
+                GROUP BY d.Doctor_id, d.Full_Name
+                ORDER BY Examination_Count DESC
+                """
+            )
+            results = cur.fetchall()
+            display_report(results, ["ID Врача", "ФИО Врача", "Количество обследований"], page)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+            page.snack_bar.open = True
+            page.update()
+
+    elif report_type == "4":  # Отчет о страховых компаниях и пациентах
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT ic.Company_id, ic.Name, COUNT(p.Patient_id) AS Patient_Count
+                FROM Insurance_Companies ic
+                LEFT JOIN Patients p ON ic.Company_id::TEXT = p.Insurance_Policy_Number
+                GROUP BY ic.Company_id, ic.Name
+                ORDER BY Patient_Count DESC
+                """
+            )
+            results = cur.fetchall()
+            display_report(results, ["ID Компании", "Название компании", "Количество пациентов"], page)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+            page.snack_bar.open = True
+            page.update()
+
+    elif report_type == "5":  # Отчет о пациентах и их последних обследованиях
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                SELECT p.Patient_id, p.Full_Name, e.Name AS Last_Examination, e.Examination_Date
+                FROM Patients p
+                LEFT JOIN (
+                    SELECT Patient_id, Name, Examination_Date,
+                           ROW_NUMBER() OVER (PARTITION BY Patient_id ORDER BY Examination_Date DESC) AS rn
+                    FROM Examinations
+                ) e ON p.Patient_id = e.Patient_id AND e.rn = 1
+                ORDER BY p.Patient_id
+                """
+            )
+            results = cur.fetchall()
+            display_report(results, ["ID Пациента", "ФИО Пациента", "Последнее обследование", "Дата обследования"], page)
+        except Exception as e:
+            page.snack_bar = ft.SnackBar(content=ft.Text(f"Ошибка: {str(e)}"), bgcolor="#E76F51")
+            page.snack_bar.open = True
+            page.update()
+
+# функция для создания главного интерфейса
+def main_ui(page):
+    # Навигационная панель
+    nav_rail = ft.NavigationRail(
+        selected_index=0,
+        label_type=ft.NavigationRailLabelType.ALL,
+        min_width=100,
+        group_alignment=-0.9,
+        destinations=[
+            ft.NavigationRailDestination(
+                icon=ft.Icons.PEOPLE_OUTLINED,
+                selected_icon=ft.Icons.PEOPLE,
+                label="Пациенты"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.MEDICAL_SERVICES_OUTLINED,
+                selected_icon=ft.Icons.MEDICAL_SERVICES,
+                label="Врачи"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.BUSINESS_OUTLINED,
+                selected_icon=ft.Icons.BUSINESS,
+                label="Компании"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.ASSIGNMENT_OUTLINED,
+                selected_icon=ft.Icons.ASSIGNMENT,
+                label="Договоры"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.HEALTH_AND_SAFETY_OUTLINED,
+                selected_icon=ft.Icons.HEALTH_AND_SAFETY,
+                label="Обследования"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.REPORT_OUTLINED,
+                selected_icon=ft.Icons.REPORT,
+                label="Отчеты"
+            ),
+            ft.NavigationRailDestination(
+                icon=ft.Icons.SETTINGS_OUTLINED,
+                selected_icon=ft.Icons.SETTINGS,
+                label="Настройки"
+            )
+        ],
+        bgcolor=ft.Colors.with_opacity(0.95, "#264653"),
+        indicator_color="#2A9D8F",
+    )
     
-    # Размещение навигационного меню на странице
-    page.add(tabs)
+    # Контейнер для контента
+    content_container = ft.Container(expand=True)
+    
+    # Обработчик навигации
+    def navigate(e):
+        index = e.control.selected_index
+        content_container.content = [
+            create_patient_ui(page),
+            create_doctor_ui(page),
+            create_insurance_company_ui(page),
+            create_contract_ui(page),
+            create_examination_ui(page),
+            create_reports_ui(page),
+            create_settings_ui(page)
+        ][index]
+        page.update()
+    
+    nav_rail.on_change = navigate
+    
+    # Основной макет
+    page.add(
+        ft.Row(
+            [
+                nav_rail,
+                ft.VerticalDivider(width=1),
+                ft.Column([content_container], expand=True, scroll=ft.ScrollMode.ALWAYS)
+            ],
+            expand=True
+        )
+    )
+    
+    # Инициализация первого экрана
+    content_container.content = create_patient_ui(page)
+    page.update()
 
-# Запуск приложения с экраном авторизации
-def run_app(page: ft.Page):
-    page.title = "Авторизация"
-    page.vertical_alignment = ft.MainAxisAlignment.START
-    page.theme_mode = ThemeMode.DARK
+# настройки, но почему они тут?
+def create_settings_ui(page):
+    return ft.Column(
+        spacing=20,
+        controls=[
+            ft.Container(
+                content=ft.ElevatedButton(
+                    text="Экспорт всей базы",
+                    icon=ft.Icons.DOWNLOAD,
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10)
+                    ),
+                    on_click=lambda e: export_vse()
+                ),
+                animate=ft.Animation(300, "easeOut")
+            ),
+            ft.Container(
+                content=ft.ElevatedButton(
+                    text="Переключить тему",
+                    icon=ft.Icons.PALETTE,
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10)
+                    ),
+                    on_click=lambda _: toggle_theme(page)
+                ),
+                animate=ft.Animation(300, "easeOut")
+            )
+        ]
+    )
 
-    # Отображение формы авторизации
-    page.add(create_auth_ui(page))
+# логин меню
+def create_login_ui(page):
+    # Фоновое изображение с пиксельной сакурой
+    background_image = ft.Image(
+        src=f"pixel_sakura.gif", 
+        fit=ft.ImageFit.COVER,
+        #width=page.window_width, #чертово разрешение 
+        #height=page.window_height,
+        opacity=0.8,  # Полупрозрачность для лучшего восприятия
+    )
+    # Заголовок приложения
+    app_logo = ft.Text(
+        "MedVision",
+        size=32,
+        weight="bold",
+        color="#2A9D8F",
+        text_align=ft.TextAlign.CENTER,
+    )
+    # Поле для ввода имени пользователя
+    username_field = ft.TextField(
+        label="Имя пользователя",
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=300,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
+        prefix_icon=ft.Icons.PERSON_OUTLINE,
+    )
+    # Поле для ввода пароля
+    password_field = ft.TextField(
+        label="Пароль",
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=300,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
+        prefix_icon=ft.Icons.LOCK_OUTLINE,
+        password=True,
+    )
+    # Поле для ввода названия базы данных
+    db_name_field = ft.TextField(
+        label="Название базы данных",
+        border_radius=15,
+        filled=True,
+        bgcolor=ft.Colors.WHITE10,
+        focused_bgcolor=ft.Colors.WHITE24,
+        width=300,
+        height=50,
+        text_size=14,
+        cursor_color="#2A9D8F",
+        prefix_icon=ft.Icons.STORAGE,
+    )
+    # Кнопка входа
+    login_button = ft.ElevatedButton(
+        text="Войти",
+        icon=ft.Icons.LOGIN,
+        style=ft.ButtonStyle(
+            shape=ft.RoundedRectangleBorder(radius=10),
+            color="#2A9D8F",
+        ),
+        on_click=lambda e: authenticate_user(username_field.value, password_field.value, db_name_field.value, page),
+        width=300,
+        height=50,
+    )
+    # Контейнер для центрирования элементов
+    login_container = ft.Container(
+        content=ft.Column(
+            [
+                app_logo,
+                ft.Divider(height=20, color="transparent"),
+                username_field,
+                ft.Divider(height=10, color="transparent"),
+                password_field,
+                ft.Divider(height=10, color="transparent"),
+                db_name_field,
+                ft.Divider(height=20, color="transparent"),
+                login_button,
+            ],
+            alignment=ft.MainAxisAlignment.CENTER,
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+        ),
+        padding=20,
+        border_radius=15,
+        bgcolor=ft.Colors.with_opacity(0.7, "#000000"),  # Полупрозрачный фон для контейнера
+        width=400,
+        height=500,
+    )
+    # Основной контейнер с фоном
+    main_container = ft.Stack(
+        [
+            background_image,
+            ft.Container(
+                content=login_container,
+                alignment=ft.alignment.center,
+            ),
+        ],
+        expand=True,
+    )
+    return main_container
 
-ft.app(target=main, assets_dir="excelBAZA")
+# функция аутентификации
+def authenticate_user(username, password, db_name, page):
+    # Проверяем, что все поля заполнены
+    if not username or not password or not db_name:
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text("Пожалуйста, заполните все поля", color="#E76F51"),
+            bgcolor="#E76F51",
+        )
+        page.snack_bar.open = True
+        page.update()
+        return
+
+    # Устанавливаем параметры подключения
+    DB_HOST = "localhost"
+    DB_USER = username
+    DB_PASSWORD = password
+    DB_NAME = db_name
+
+    try:
+        # Устанавливаем учетные данные для подключения к базе данных
+        set_db_credentials(DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)
+
+        # Проверяем подключение к базе данных
+        conn = get_connection()
+        conn.close()
+
+        # Если подключение успешно, показываем сообщение об успешной авторизации
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text("Успешная авторизация!", color="#2A9D8F"),
+            bgcolor="#E9C46A",
+        )
+        page.snack_bar.open = True
+        page.update()
+
+        # Очистка текущего интерфейса
+        page.clean()
+
+        # Загрузка главного интерфейса
+        main_ui(page)
+    except Exception as e:
+        # Если произошла ошибка подключения, показываем сообщение об ошибке
+        page.snack_bar = ft.SnackBar(
+            content=ft.Text(f"Ошибка подключения: {str(e)}", color="#E76F51"),
+            bgcolor="#E76F51",
+        )
+        page.snack_bar.open = True
+        page.update()
+
+# Функция main
+def main(page: ft.Page):
+    page.title = "MedVision"
+    page.theme_mode = ft.ThemeMode.DARK
+    
+    # начальный экран как экран авторизации
+    page.add(create_login_ui(page))
+
+
+# Запуск приложения
+ft.app(target=main, assets_dir="assets")
